@@ -1,9 +1,9 @@
 'use strict';
 
-var self = this || global;
+let self = this || global;
 
 // Polyfill from https://github.com/github/fetch/blob/v1.1.1/fetch.js#L8-L21
-var support = {
+let support = {
   searchParams: 'URLSearchParams' in self,
   iterable: 'Symbol' in self && 'iterator' in Symbol,
   blob: 'FileReader' in self && 'Blob' in self && (function() {
@@ -20,12 +20,12 @@ var support = {
 
 // Polyfill from https://github.com/github/fetch/blob/v1.1.1/fetch.js#L364-L375
 function parseHeaders(rawHeaders) {
-  var headers = new Headers()
+  let headers = new Headers()
   rawHeaders.split(/\r?\n/).forEach(function(line) {
-    var parts = line.split(':')
-    var key = parts.shift().trim()
+    let parts = line.split(':')
+    let key = parts.shift().trim()
     if (key) {
-      var value = parts.join(':').trim()
+      let value = parts.join(':').trim()
       headers.append(key, value)
     }
   });
@@ -36,8 +36,10 @@ function parseHeaders(rawHeaders) {
 // Polyfill from https://github.com/github/fetch/blob/v1.1.1/fetch.js#L424-L464
 export default function fetchPolyfill (input, init) {
   return new Promise(function(resolve, reject) {
-    var request = new Request(input, init)
-    var xhr = new XMLHttpRequest()
+    let request = new Request(input, init)
+    let xhr = new XMLHttpRequest()
+
+    let hasPromisResolved = false;
 
     /* @patch: timeout */
     if (init.timeout) {
@@ -46,22 +48,31 @@ export default function fetchPolyfill (input, init) {
     /* @endpatch */
 
     xhr.onload = function() {
-      var options = {
+      let options = {
         status: xhr.status,
         statusText: xhr.statusText,
         headers: parseHeaders(xhr.getAllResponseHeaders() || '')
       }
       options.url = 'responseURL' in xhr ? xhr.responseURL : options.headers.get('X-Request-URL')
-      var body = 'response' in xhr ? xhr.response : xhr.responseText
-      resolve(new Response(body, options))
+      let body = 'response' in xhr ? xhr.response : xhr.responseText
+      if (!hasPromisResolved) {
+        hasPromisResolved = true;
+        resolve(new Response(body, options))
+      }
     }
 
     xhr.onerror = function() {
-      reject(new TypeError('Network request failed'))
+      if (!hasPromisResolved) {
+        hasPromisResolved = true;
+        reject(new TypeError('Network request failed'))
+      }
     }
 
     xhr.ontimeout = function() {
-      reject(new TypeError('Network request failed'))
+      if (!hasPromisResolved) {
+        hasPromisResolved = true;
+        reject(new TypeError('Network request failed'))
+      }
     }
 
     xhr.open(request.method, request.url, true)
@@ -79,5 +90,10 @@ export default function fetchPolyfill (input, init) {
     })
 
     xhr.send(typeof request._bodyInit === 'undefined' ? null : request._bodyInit)
+
+    setTimeout(() => {
+      xhr.abort();
+      xhr.ontimeout(); // rejects promise
+    }, init.timeout);
   })
 }
